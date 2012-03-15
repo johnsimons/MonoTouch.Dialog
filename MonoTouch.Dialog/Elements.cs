@@ -992,6 +992,14 @@ namespace MonoTouch.Dialog
 		void WillDisplay (UITableView tableView, UITableViewCell cell, NSIndexPath indexPath);
 	}
 	
+	/// <summary>
+	/// This interface is implemented by entry type Elements that support editing mode.
+	/// </summary>
+	public interface IUIResponder{
+		void BecomeFirstResponder(bool animated);
+		void ResignFirstResponder(bool animated);
+	}
+	
 	public class MultilineElement : StringElement, IElementSizing {
 		public MultilineElement (string caption) : base (caption)
 		{
@@ -1285,7 +1293,7 @@ namespace MonoTouch.Dialog
 	///     
 	/// The Text fields in a given section are aligned with each other.
 	/// </remarks>
-	public class EntryElement : Element {
+	public class EntryElement : Element, IUIResponder {
 		/// <summary>
 		///   The value of the EntryElement
 		/// </summary>
@@ -1372,7 +1380,6 @@ namespace MonoTouch.Dialog
 		bool isPassword, becomeResponder;
 		UITextField entry;
 		string placeholder;
-		static UIFont font = UIFont.BoldSystemFontOfSize (17);
 
 		public event EventHandler Changed;
 		public event Func<bool> ShouldReturn;
@@ -1421,42 +1428,34 @@ namespace MonoTouch.Dialog
 			return Value;
 		}
 
-		// 
-		// Computes the X position for the entry by aligning all the entries in the Section
-		//
-		SizeF ComputeEntryPosition (UITableView tv, UITableViewCell cell)
-		{
-			Section s = Parent as Section;
-			if (s.EntryAlignment.Width != 0)
-				return s.EntryAlignment;
-			
-			// If all EntryElements have a null Caption, align UITextField with the Caption
-			// offset of normal cells (at 10px).
-			SizeF max = new SizeF (-15, tv.StringSize ("M", font).Height);
-			foreach (var e in s.Elements){
-				var ee = e as EntryElement;
-				if (ee == null)
-					continue;
-				
-				if (ee.Caption != null) {
-					var size = tv.StringSize (ee.Caption, font);
-					if (size.Width > max.Width)
-						max = size;
-				}
-			}
-			s.EntryAlignment = new SizeF (25 + Math.Min (max.Width, 160), max.Height);
-			return s.EntryAlignment;
-		}
-
 		protected virtual UITextField CreateTextField (RectangleF frame)
 		{
-			return new UITextField (frame) {
+			var textField = new UITextField (frame) {
 				AutoresizingMask = UIViewAutoresizing.FlexibleWidth | UIViewAutoresizing.FlexibleLeftMargin,
-				Placeholder = placeholder ?? "",
+				Placeholder = placeholder ?? String.Empty,
 				SecureTextEntry = isPassword,
-				Text = Value ?? "",
+				Text = Value ?? String.Empty,
 				Tag = 1
 			};
+			
+			var inputAccessoryView = new UIToolbar(new RectangleF(0, 0, 320, 40));
+			inputAccessoryView.BarStyle = UIBarStyle.Black;
+			inputAccessoryView.Items = new UIBarButtonItem[] {
+				new UIBarButtonItem("Prev", UIBarButtonItemStyle.Bordered, delegate {
+					this.MoveToPreviousResponder();	
+				}),
+				new UIBarButtonItem("Next", UIBarButtonItemStyle.Bordered, delegate {
+					this.MoveToNextResponder();	
+				}),
+				new UIBarButtonItem(UIBarButtonSystemItem.FlexibleSpace),
+				new UIBarButtonItem(UIBarButtonSystemItem.Done, delegate {
+					textField.ResignFirstResponder();
+				})
+			};
+			
+			textField.InputAccessoryView = inputAccessoryView;
+			
+			return textField;
 		}
 		
 		static NSString cellkey = new NSString ("EntryElement");
@@ -1477,7 +1476,7 @@ namespace MonoTouch.Dialog
 				RemoveTag (cell, 1);
 			
 			if (entry == null){
-				SizeF size = ComputeEntryPosition (tv, cell);
+				SizeF size = this.ComputeEntryPosition (tv, cell);
 				float yOffset = (cell.ContentView.Bounds.Height - size.Height) / 2 - 1;
 				float width = cell.ContentView.Bounds.Width - size.Width;
 				
@@ -1494,30 +1493,7 @@ namespace MonoTouch.Dialog
 					if (ShouldReturn != null)
 						return ShouldReturn();
 					
-					RootElement root = GetImmediateRootElement ();
-					EntryElement focus = null;
-					
-					if (root == null)
-						return true;
-					
-					foreach (var s in root.Sections) {
-						foreach (var e in s.Elements) {
-							if (e == this) {
-								focus = this;
-							} else if (focus != null && e is EntryElement) {
-								focus = e as EntryElement;
-								break;
-							}
-						}
-						
-						if (focus != null && focus != this)
-							break;
-					}
-					
-					if (focus != this)
-						focus.BecomeFirstResponder (true);
-					else 
-						focus.ResignFirstResponder (true);
+					this.MoveToNextResponder();
 					
 					return true;
 				};

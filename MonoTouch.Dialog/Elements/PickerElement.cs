@@ -8,7 +8,7 @@ using MonoTouch.UIKit;
 
 namespace MonoTouch.Dialog
 {
-	internal class PickerElement : Element
+	internal class PickerElement : Element, IUIResponder
 	{
 		private bool becomeResponder;
 		private UIPickerLabel replacementLabel;
@@ -52,6 +52,31 @@ namespace MonoTouch.Dialog
 			return selectedIdx;
 		}
 		
+		public void BecomeFirstResponder(bool animated)
+		{
+			becomeResponder = true;
+			var tv = GetContainerTableView();
+			if (tv == null)
+				return;
+			tv.ScrollToRow(IndexPath, UITableViewScrollPosition.Middle, animated);
+			if (replacementLabel != null)
+			{
+				replacementLabel.BecomeFirstResponder();
+				becomeResponder = false;
+			}
+		}
+
+		public void ResignFirstResponder(bool animated)
+		{
+			becomeResponder = false;
+			var tv = GetContainerTableView();
+			if (tv == null)
+				return;
+			tv.ScrollToRow(IndexPath, UITableViewScrollPosition.Middle, animated);
+			if (replacementLabel != null)
+				replacementLabel.ResignFirstResponder();
+		}
+		
 		public override string Summary()
 		{
 			return Value;
@@ -79,6 +104,14 @@ namespace MonoTouch.Dialog
 						TextColor = defaultColor,
 			       	};
 			
+			label.NextField += delegate {
+				this.MoveToNextResponder();	
+			};
+			
+			label.PreviousField += delegate {
+				this.MoveToPreviousResponder();	
+			};
+
 			return label;
 		}
 		
@@ -148,29 +181,6 @@ namespace MonoTouch.Dialog
 			replacementLabel.SetPickerIndex(selectedIdx);
 		}
 		
-		private SizeF ComputeEntryPosition(UITableView tv, UITableViewCell cell)
-		{
-			var s = this.Parent as Section;
-			if (s.EntryAlignment.Width != 0)
-				return s.EntryAlignment;
-
-			// If all EntryElements have a null Caption, align UITextField with the Caption
-			// offset of normal cells (at 10px).
-			var max = new SizeF(-15, tv.StringSize("M", defaultFont).Height);
-			foreach (var ee in s.Elements)
-			{
-				if (ee.Caption != null)
-				{
-					var size = tv.StringSize(ee.Caption, defaultFont);
-					if (size.Width > max.Width)
-						max = size;
-				}
-			}
-			s.EntryAlignment = new SizeF(25 + Math.Min(max.Width, 160), max.Height);
-			
-			return s.EntryAlignment;
-		}
-		
 		private void UpdateValue(string newValue){
 			
 			if (newValue == Value)
@@ -223,13 +233,26 @@ namespace MonoTouch.Dialog
 				UserInteractionEnabled = true;
 				
 				inputAccessoryView = new UIToolbar(new RectangleF(0, 0, 320, 40));
+				inputAccessoryView.BarStyle = UIBarStyle.Black;
 				inputAccessoryView.Items = new UIBarButtonItem[] {
+					new UIBarButtonItem("Prev", UIBarButtonItemStyle.Bordered, delegate {
+						if(PreviousField != null){
+							PreviousField(this, EventArgs.Empty);	
+						}
+					}),
+					new UIBarButtonItem("Next", UIBarButtonItemStyle.Bordered, delegate {
+						if(NextField != null){
+							NextField(this, EventArgs.Empty);	
+						}
+					}),
 					new UIBarButtonItem(UIBarButtonSystemItem.FlexibleSpace),
 					new UIBarButtonItem(UIBarButtonSystemItem.Done, delegate {
 						ResignFirstResponder();
 					})
 				};
 			}
+			
+			public event EventHandler PreviousField, NextField;
 			
 			public void SetPickerIndex(int selectedIdx){
 				this.selectedIdx = selectedIdx;

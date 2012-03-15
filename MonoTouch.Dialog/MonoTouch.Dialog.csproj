@@ -101,12 +101,14 @@
     <Compile Include="Utilities\LocalizationExtensions.cs" />
     <Compile Include="Elements\Json.cs" />
     <Compile Include="Elements\PickerElement.cs" />
+    <Compile Include="Extensions\ElementExtensions.cs" />
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Images\" />
     <Folder Include="Utilities\" />
     <Folder Include="OldElements\" />
     <Folder Include="Elements\" />
+    <Folder Include="Extensions\" />
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Images\arrow.png">
