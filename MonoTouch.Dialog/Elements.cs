@@ -1601,157 +1601,279 @@ namespace MonoTouch.Dialog
 		}
 	}
 	
-	public class DateTimeElement : StringElement {
+	public class DateTimeElement : StringElement, IUIResponder
+	{
+		private bool becomeResponder;
 		public DateTime DateValue;
-		public UIDatePicker datePicker;
-		public event Action<DateTimeElement> DateSelected;
-		
-		protected internal NSDateFormatter fmt = new NSDateFormatter () {
-			DateStyle = NSDateFormatterStyle.Short
-		};
-		
-		public DateTimeElement (string caption, DateTime date) : base (caption)
+		private UILabel replacementLabel;
+		public DateTime InitialValue = DateTime.MinValue, MinDate = DateTime.MinValue, MaxDate = DateTime.MaxValue;
+	
+		protected internal NSDateFormatter fmt = new NSDateFormatter
+		                                         	{
+		                                         		DateStyle = NSDateFormatterStyle.Short,
+		                                         	};
+
+		public DateTimeElement(string caption, DateTime date) : base(caption)
 		{
 			DateValue = date;
-			Value = FormatDate (date);
-		}	
+			Value = DateValue == DateTime.MinValue ? String.Empty : FormatDate(DateValue);
+		}
 		
-		public override UITableViewCell GetCell (UITableView tv)
+		private static readonly NSString cellkey = new NSString("DateTimeCell");
+		
+		public void BecomeFirstResponder(bool animated)
 		{
-			Value = FormatDate (DateValue);
-			var cell = base.GetCell (tv);
+			becomeResponder = true;
+			var tv = GetContainerTableView();
+			if (tv == null)
+				return;
+			tv.ScrollToRow(IndexPath, UITableViewScrollPosition.Middle, animated);
+			if (replacementLabel != null)
+			{
+				replacementLabel.BecomeFirstResponder();
+				becomeResponder = false;
+			}
+		}
+
+		public void ResignFirstResponder(bool animated)
+		{
+			becomeResponder = false;
+			var tv = GetContainerTableView();
+			if (tv == null)
+				return;
+			tv.ScrollToRow(IndexPath, UITableViewScrollPosition.Middle, animated);
+			if (replacementLabel != null)
+				replacementLabel.ResignFirstResponder();
+		}
+		
+		protected override NSString CellKey
+		{
+			get { return cellkey; }
+		}
+		
+		protected virtual UILabel CreateReplacementLabel(RectangleF frame)
+		{
+			var label = new UIDatePickerLabel(frame, CreatePicker())
+			       	{
+						BackgroundColor = UIColor.Clear,
+			       		AutoresizingMask = UIViewAutoresizing.FlexibleWidth | UIViewAutoresizing.FlexibleLeftMargin,
+			       		Text = Value ?? String.Empty,
+			       		Tag = 1,
+						TextAlignment = UITextAlignment.Right,
+						AdjustsFontSizeToFitWidth = true,
+			       	};
+			
+			label.NextField += delegate {
+				this.MoveToNextResponder();	
+			};
+			
+			label.PreviousField += delegate {
+				this.MoveToPreviousResponder();	
+			};
+
+			return label;
+		}
+		
+		public override UITableViewCell GetCell(UITableView tv)
+		{
+			Value = DateValue == DateTime.MinValue ? String.Empty : FormatDate(DateValue);
+			
+			var cell = tv.DequeueReusableCell(CellKey);
+			if (cell == null)
+			{
+				cell = new UITableViewCell(UITableViewCellStyle.Default, CellKey);
+				cell.SelectionStyle = UITableViewCellSelectionStyle.None;
+			}
+			else
+				RemoveTag(cell, 1);
+			
 			cell.Accessory = UITableViewCellAccessory.DisclosureIndicator;
+			
+			if (replacementLabel == null)
+			{
+				SizeF size = this.ComputeEntryPosition(tv, cell);
+				float yOffset = (cell.ContentView.Bounds.Height - size.Height)/2 - 1;
+				float width = cell.ContentView.Bounds.Width - size.Width;
+				
+				replacementLabel = CreateReplacementLabel(new RectangleF(size.Width + 5, yOffset, width - 10, size.Height));
+			}
+			
+			if (becomeResponder)
+			{
+				replacementLabel.BecomeFirstResponder();
+				becomeResponder = false;
+			}
+			
+			cell.TextLabel.Text = Caption;
+			cell.ContentView.AddSubview(replacementLabel);
+			
 			return cell;
 		}
- 
-		protected override void Dispose (bool disposing)
+
+		protected override void Dispose(bool disposing)
 		{
-			base.Dispose (disposing);
-			if (disposing){
-				if (fmt != null){
-					fmt.Dispose ();
+			base.Dispose(disposing);
+			if (disposing)
+			{
+				if (fmt != null)
+				{
+					fmt.Dispose();
 					fmt = null;
 				}
-				if (datePicker != null){
-					datePicker.Dispose ();
-					datePicker = null;
+				
+				if(replacementLabel != null)
+				{
+					replacementLabel.Dispose();
+					replacementLabel = null;
 				}
 			}
 		}
-		
-		public virtual string FormatDate (DateTime dt)
+
+		public virtual string FormatDate(DateTime dt)
 		{
-			return fmt.ToString (dt) + " " + dt.ToLocalTime ().ToShortTimeString ();
+			return fmt.ToString(dt) + " " + dt.ToShortTimeString();
 		}
-		
-		public virtual UIDatePicker CreatePicker ()
+
+		public virtual UIDatePicker CreatePicker()
 		{
-			var picker = new UIDatePicker (RectangleF.Empty){
-				AutoresizingMask = UIViewAutoresizing.FlexibleWidth,
-				Mode = UIDatePickerMode.DateAndTime,
-				Date = DateValue
-			};
+			var picker = new UIDatePicker(RectangleF.Empty)
+			             	{
+			             		AutoresizingMask = UIViewAutoresizing.FlexibleWidth,
+			             		Mode = UIDatePickerMode.DateAndTime,
+			             		Date = DateValue == DateTime.MinValue ? InitialValue : DateValue,
+								MinimumDate = MinDate,
+								MaximumDate = MaxDate,
+			             	};
+			
+			picker.ValueChanged += UpdateValue;
+			
 			return picker;
 		}
-		                                                                                                                                
-		static RectangleF PickerFrameWithSize (SizeF size)
-		{                                                                                                                                    
-			var screenRect = UIScreen.MainScreen.ApplicationFrame;
-			float fY = 0, fX = 0;
+		
+		private void UpdateValue(object sender, EventArgs e){
+			UIDatePicker entry = sender as UIDatePicker;
 			
-			switch (UIApplication.SharedApplication.StatusBarOrientation){
-			case UIInterfaceOrientation.LandscapeLeft:
-			case UIInterfaceOrientation.LandscapeRight:
-				fX = (screenRect.Height - size.Width) /2;
-				fY = (screenRect.Width - size.Height) / 2 -17;
-				break;
-				
-			case UIInterfaceOrientation.Portrait:
-			case UIInterfaceOrientation.PortraitUpsideDown:
-				fX = (screenRect.Width - size.Width) / 2;
-				fY = (screenRect.Height - size.Height) / 2 - 25;
-				break;
-			}
-			
-			return new RectangleF (fX, fY, size.Width, size.Height);
-		}                                                                                                                                    
+			if (entry == null)
+				return;
 
-		class MyViewController : UIViewController {
-			DateTimeElement container;
+			var newValue = FormatDate(entry.Date);
+			if (newValue == Value)
+				return;
 			
-			public MyViewController (DateTimeElement container)
-			{
-				this.container = container;
-			}
-			
-			public override void ViewWillDisappear (bool animated)
-			{
-				base.ViewWillDisappear (animated);
-				container.DateValue = container.datePicker.Date;
-				if (container.DateSelected != null)
-					container.DateSelected (container);
-			}
-			
-			public override void DidRotate (UIInterfaceOrientation fromInterfaceOrientation)
-			{
-				base.DidRotate (fromInterfaceOrientation);
-				container.datePicker.Frame = PickerFrameWithSize (container.datePicker.SizeThatFits (SizeF.Empty));
-			}
-			
-			public bool Autorotate { get; set; }
-			
-			public override bool ShouldAutorotateToInterfaceOrientation (UIInterfaceOrientation toInterfaceOrientation)
-			{
-				return Autorotate;
-			}
+			DateValue = entry.Date;
+			replacementLabel.Text = Value = newValue;
 		}
 		
-		public override void Selected (DialogViewController dvc, UITableView tableView, NSIndexPath path)
-		{
-			var vc = new MyViewController (this) {
-				Autorotate = dvc.Autorotate
-			};
-			datePicker = CreatePicker ();
-			datePicker.Frame = PickerFrameWithSize (datePicker.SizeThatFits (SizeF.Empty));
-			                            
-			vc.View.BackgroundColor = UIColor.Black;
-			vc.View.AddSubview (datePicker);
-			dvc.ActivateController (vc);
+		private class UIDatePickerLabel: UILabel{
+			
+			private UIDatePicker inputView;
+			private UIToolbar inputAccessoryView;
+			
+			public event EventHandler PreviousField, NextField;
+			
+			public UIDatePickerLabel (RectangleF frame, UIDatePicker picker): base(frame)
+			{
+				this.inputView = picker;
+				UserInteractionEnabled = true;
+				
+				inputAccessoryView = new UIToolbar(new RectangleF(0, 0, 320, 40));
+				inputAccessoryView.BarStyle = UIBarStyle.Black;
+				inputAccessoryView.Items = new UIBarButtonItem[] {
+					new UIBarButtonItem("Prev", UIBarButtonItemStyle.Bordered, delegate {
+						if(PreviousField != null){
+							PreviousField(this, EventArgs.Empty);	
+						}
+					}),
+					new UIBarButtonItem("Next", UIBarButtonItemStyle.Bordered, delegate {
+						if(NextField != null){
+							NextField(this, EventArgs.Empty);	
+						}
+					}),
+					new UIBarButtonItem(UIBarButtonSystemItem.FlexibleSpace),
+					new UIBarButtonItem(UIBarButtonSystemItem.Done, delegate {
+						ResignFirstResponder();
+					})
+				};
+			}
+
+			public override void TouchesEnded (NSSet touches, UIEvent evt)
+			{
+				BecomeFirstResponder();
+				
+				base.TouchesEnded (touches, evt);
+			}
+			
+			public override bool CanBecomeFirstResponder {
+				get {
+					return true;
+				}
+			}
+			
+			public override UIView InputAccessoryView {
+				get {
+					return inputAccessoryView;
+				}
+			}
+			
+			public override UIView InputView {
+				get {
+					return inputView;
+				}
+			}
+			
+			protected override void Dispose(bool disposing)
+			{
+				base.Dispose(disposing);
+				if (disposing)
+				{
+					if (inputView != null)
+					{
+						inputView.Dispose();
+						inputView = null;
+					}
+					
+					if (inputAccessoryView != null)
+					{
+						inputAccessoryView.Dispose();
+						inputAccessoryView = null;
+					}
+				}
+			}
 		}
 	}
 	
 	public class DateElement : DateTimeElement {
-		public DateElement (string caption, DateTime date) : base (caption, date)
+		public DateElement(string caption, DateTime date) : base(caption, date)
 		{
 			fmt.DateStyle = NSDateFormatterStyle.Medium;
 		}
 		
-		public override string FormatDate (DateTime dt)
+		public override string FormatDate(DateTime dt)
 		{
-			return fmt.ToString (dt);
+			return fmt.ToString(dt);
 		}
 		
-		public override UIDatePicker CreatePicker ()
+		public override UIDatePicker CreatePicker()
 		{
-			var picker = base.CreatePicker ();
+			var picker = base.CreatePicker();
 			picker.Mode = UIDatePickerMode.Date;
 			return picker;
 		}
 	}
 	
 	public class TimeElement : DateTimeElement {
-		public TimeElement (string caption, DateTime date) : base (caption, date)
+		public TimeElement(string caption, DateTime date) : base(caption, date)
 		{
 		}
 		
 		public override string FormatDate (DateTime dt)
 		{
-			return dt.ToLocalTime ().ToShortTimeString ();
+			return dt.ToShortTimeString();
 		}
 		
-		public override UIDatePicker CreatePicker ()
+		public override UIDatePicker CreatePicker()
 		{
-			var picker = base.CreatePicker ();
+			var picker = base.CreatePicker();
 			picker.Mode = UIDatePickerMode.Time;
 			return picker;
 		}
