@@ -1606,7 +1606,9 @@ namespace MonoTouch.Dialog
 		private static readonly NSString cellkey = new NSString("DateTimeCell");
 		private bool becomeResponder;
 		private UILabel replacementLabel;
-	
+		private DateTime dateValue;
+		private DateTimeKind dateValueKind = DateTimeKind.Unspecified;
+		
 		protected internal NSDateFormatter fmt = new NSDateFormatter
 		                                         	{
 		                                         		DateStyle = NSDateFormatterStyle.Short,
@@ -1619,7 +1621,18 @@ namespace MonoTouch.Dialog
 		}
 		
 		public event Action<DateTimeElement> DateSelected;
-		public DateTime DateValue;
+		
+		public DateTime DateValue
+		{
+			get{
+				return dateValue;
+			} 
+			set {
+				dateValue = value;
+				dateValueKind = dateValue.Kind;
+			}
+		}
+		
 		public DateTime InitialValue = DateTime.MinValue, MinDate = DateTime.MinValue, MaxDate = DateTime.MaxValue;
 		
 		public void BecomeFirstResponder(bool animated)
@@ -1732,7 +1745,7 @@ namespace MonoTouch.Dialog
 
 		public virtual string FormatDate(DateTime dt)
 		{
-			return fmt.ToString (dt) + " " + dt.ToLocalTime ().ToShortTimeString ();
+			return fmt.ToString(dt) + " " + dt.ToLocalTime().ToShortTimeString();
 		}
 
 		public virtual UIDatePicker CreatePicker()
@@ -1741,14 +1754,22 @@ namespace MonoTouch.Dialog
 			             	{
 			             		AutoresizingMask = UIViewAutoresizing.FlexibleWidth,
 			             		Mode = UIDatePickerMode.DateAndTime,
-			             		Date = DateValue == DateTime.MinValue ? InitialValue : DateValue,
-								MinimumDate = MinDate,
-								MaximumDate = MaxDate,
+			             		Date = ConvertDateToUtc((DateValue == DateTime.MinValue ? InitialValue : DateValue)),
+								MinimumDate = ConvertDateToUtc(MinDate),
+								MaximumDate = ConvertDateToUtc(MaxDate),
 			             	};
 			
 			picker.ValueChanged += UpdateValue;
 			
 			return picker;
+		}
+		
+		private static DateTime ChangeDateKind(DateTime date, DateTimeKind kind){
+			return DateTime.SpecifyKind(date, kind);
+		}
+		
+		private static DateTime ConvertDateToUtc(DateTime date){
+			return date.ToUniversalTime();
 		}
 		
 		private void UpdateValue(object sender, EventArgs e){
@@ -1758,13 +1779,21 @@ namespace MonoTouch.Dialog
 				return;
 			}
 			
-			var newValue = FormatDate(entry.Date);
-			if (newValue == Value){
+			DateTime resultDate = entry.Date;
+			switch(dateValueKind){
+				case DateTimeKind.Local:
+				case DateTimeKind.Unspecified:
+					resultDate = resultDate.ToLocalTime();
+					break;
+			}
+			
+			var newValue = ChangeDateKind(resultDate, dateValueKind);
+			if (newValue == DateValue){
 				return;
 			}
 			
-			DateValue = entry.Date;
-			replacementLabel.Text = Value = newValue;
+			DateValue = newValue;
+			replacementLabel.Text = Value = FormatDate(newValue);
 			
 			if (DateSelected != null){
 				DateSelected(this);
