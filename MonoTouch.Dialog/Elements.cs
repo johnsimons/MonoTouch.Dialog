@@ -1603,10 +1603,9 @@ namespace MonoTouch.Dialog
 	
 	public class DateTimeElement : StringElement, IUIResponder
 	{
+		private static readonly NSString cellkey = new NSString("DateTimeCell");
 		private bool becomeResponder;
-		public DateTime DateValue;
 		private UILabel replacementLabel;
-		public DateTime InitialValue = DateTime.MinValue, MinDate = DateTime.MinValue, MaxDate = DateTime.MaxValue;
 	
 		protected internal NSDateFormatter fmt = new NSDateFormatter
 		                                         	{
@@ -1619,7 +1618,9 @@ namespace MonoTouch.Dialog
 			Value = DateValue == DateTime.MinValue ? String.Empty : FormatDate(DateValue);
 		}
 		
-		private static readonly NSString cellkey = new NSString("DateTimeCell");
+		public event Action<DateTimeElement> DateSelected;
+		public DateTime DateValue;
+		public DateTime InitialValue = DateTime.MinValue, MinDate = DateTime.MinValue, MaxDate = DateTime.MaxValue;
 		
 		public void BecomeFirstResponder(bool animated)
 		{
@@ -1731,7 +1732,7 @@ namespace MonoTouch.Dialog
 
 		public virtual string FormatDate(DateTime dt)
 		{
-			return fmt.ToString(dt) + " " + dt.ToShortTimeString();
+			return fmt.ToString (dt) + " " + dt.ToLocalTime ().ToShortTimeString ();
 		}
 
 		public virtual UIDatePicker CreatePicker()
@@ -1753,15 +1754,21 @@ namespace MonoTouch.Dialog
 		private void UpdateValue(object sender, EventArgs e){
 			UIDatePicker entry = sender as UIDatePicker;
 			
-			if (entry == null)
+			if (entry == null){
 				return;
-
+			}
+			
 			var newValue = FormatDate(entry.Date);
-			if (newValue == Value)
+			if (newValue == Value){
 				return;
+			}
 			
 			DateValue = entry.Date;
 			replacementLabel.Text = Value = newValue;
+			
+			if (DateSelected != null){
+				DateSelected(this);
+			}
 		}
 		
 		private class UIDatePickerLabel: UILabel{
